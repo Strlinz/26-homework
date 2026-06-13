@@ -2,15 +2,32 @@ import React, { useState, useEffect, useRef } from 'react';
 
 interface PythonInterpreterProps {
   initialCode?: string;
+  code?: string;
+  onCodeChange?: (code: string) => void;
 }
 
-const PythonInterpreter: React.FC<PythonInterpreterProps> = ({ initialCode = 'print("Hello, World!")' }) => {
-  const [code, setCode] = useState(initialCode);
+const PythonInterpreter: React.FC<PythonInterpreterProps> = ({ 
+  initialCode = 'print("Hello, World!")',
+  code: externalCode,
+  onCodeChange
+}) => {
+  const [internalCode, setInternalCode] = useState(initialCode);
+  const code = externalCode !== undefined ? externalCode : internalCode;
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(false);
   const [pyodide, setPyodide] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newCode = e.target.value;
+    if (onCodeChange) {
+      onCodeChange(newCode);
+    } else {
+      setInternalCode(newCode);
+    }
+  };
 
   useEffect(() => {
     const loadPyodide = async () => {
@@ -25,6 +42,16 @@ const PythonInterpreter: React.FC<PythonInterpreterProps> = ({ initialCode = 'pr
           });
           setPyodide(pyodideInstance);
           setIsLoading(false);
+          
+          // 预加载常用数据分析库
+          setIsLoadingPackages(true);
+          try {
+            await pyodideInstance.loadPackage(['numpy', 'pandas']);
+          } catch (pkgError) {
+            console.warn('Failed to load some packages:', pkgError);
+            // 继续，即使包加载失败
+          }
+          setIsLoadingPackages(false);
         } else {
           throw new Error('Pyodide library not loaded');
         }
@@ -32,6 +59,7 @@ const PythonInterpreter: React.FC<PythonInterpreterProps> = ({ initialCode = 'pr
         console.error('Failed to load Pyodide:', error);
         setError(`Failed to load Python interpreter: ${error.message}`);
         setIsLoading(false);
+        setIsLoadingPackages(false);
       }
     };
 
@@ -74,10 +102,6 @@ builtins.print = custom_print
     }
   };
 
-  const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCode(e.target.value);
-  };
-
   const clearOutput = () => {
     setOutput('');
   };
@@ -95,10 +119,10 @@ builtins.print = custom_print
           </button>
           <button
             onClick={runCode}
-            disabled={isLoading || !pyodide}
+            disabled={isLoading || isLoadingPackages || !pyodide}
             className="text-xs px-2 py-1 bg-black text-white hover:bg-gray-800 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? '加载中...' : '运行'}
+            {isLoading ? '加载中...' : isLoadingPackages ? '加载库中...' : '运行'}
           </button>
         </div>
       </div>
@@ -117,6 +141,8 @@ builtins.print = custom_print
             <div className="text-red-600">{error}</div>
           ) : isLoading ? (
             <div className="text-gray-600">正在加载Python解释器，请稍候...</div>
+          ) : isLoadingPackages ? (
+            <div className="text-gray-600">正在加载数据分析库(numpy, pandas)，请稍候...</div>
           ) : (
             output || '运行结果将显示在这里...'
           )}
